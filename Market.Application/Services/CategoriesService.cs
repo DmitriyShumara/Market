@@ -3,101 +3,102 @@ using Market.Application.Models.Responses;
 using Market.Application.Repositories;
 using Market.Application.Services.Abstractions;
 using Market.Domain.Entities;
+using FluentValidation;
 
 namespace Market.Application.Services;
 
-public class CategoriesService(ICategoriesRepository categoriesRepository, IProductsRepository productsRepository)
-	: ICategoriesService
+public class CategoriesService(ICategoriesRepository categoriesRepository, IProductsRepository productsRepository, IValidator<CategoryCreateDto> validator, IValidator<CategoryUpdateDto> updateValidator)
+    : ICategoriesService
 {
-	public async Task<IEnumerable<CategoryListDto>> GetAll(CancellationToken cancellationToken)
-	{
-		var categories = await categoriesRepository.GetAll(cancellationToken);
-		
-		return GetCategoriesTree(categories);
-	}
-	
-	public async Task Create(CategoryCreateDto request, CancellationToken cancellationToken)
-	{
-		var category = new Category
-		{
-			Name = request.Name
-		};
-		
-		await categoriesRepository.Add(category, cancellationToken);
-		
-		var parentCategory = request.ParentId.HasValue
-			? await categoriesRepository.Get(request.ParentId.Value, cancellationToken)
-			: null;
+    public async Task<IEnumerable<CategoryListDto>> GetAll(CancellationToken cancellationToken)
+    {
+        // 1. Отримуємо всі категорії (EF Core щойно зібрав з них дерево під капотом)
+        var allCategories = await categoriesRepository.GetAll(cancellationToken);
+        
+        // 2. Вибираємо тільки верхівки дерева (кореневі категорії)
+        var rootCategories = allCategories.Where(c => c.ParentId == null);
+        
+        // 3. Мапимо рекурсивно. Тепер воно пірне хоч на 100 рівнів униз!
+        return rootCategories.Select(MapToDto);
+    }
 
-		if (parentCategory is not null)
-		{
-			category.Path = $"{parentCategory.Path}.{category.Id:N}";
-			
-			await categoriesRepository.Update(category, cancellationToken);
-		}
-	}
+    public async Task<CategoryListDto?> GetById(Guid id, CancellationToken cancellationToken)
+    {
+        // Звертаємось до репозиторію. Якщо пам'ятаєш, там уже є метод Get
+        // який робить .FirstOrDefaultAsync()
+        var category = await categoriesRepository.Get(id, cancellationToken);
 
-	public async Task Update(Guid id, CategoryUpdateDto request, CancellationToken cancellationToken)
-	{
-		var category = await categoriesRepository.Get(id, cancellationToken);
+        if (category is null)
+        {
+            return null; // Повертаємо null, якщо такої категорії немає
+        }
 
-		if (category is null)
-		{
-			throw new ArgumentNullException(nameof(category));
-		}
-		
-		category.Name = request.Name;
-		await categoriesRepository.Update(category, cancellationToken);
-	}
+        // Використовуємо наш чистий мапер, який ми написали раніше!
+        return MapToDto(category);
+    }
+    
+    public async Task Create(CategoryCreateDto request, CancellationToken cancellationToken)
+    {
+        await validator.ValidateAndThrowAsync(request, cancellationToken);
+        var category = new Category
+        {
+            Name = request.Name,
+            // Тепер ми просто зберігаємо ID батька. Ніяких милиць зі склеюванням шляхів!
+            ParentId = request.ParentId 
+        };
+        
+        await categoriesRepository.Add(category, cancellationToken);
+    }
 
-	public async Task Delete(Guid id, CancellationToken cancellationToken)
-	{
-		if (await productsRepository.IsProductInCategory(id, cancellationToken))
-		{
-			throw new InvalidOperationException($"Cannot delete category with id {id}");
-		}
-		
-		var category = await categoriesRepository.Get(id, cancellationToken);
-		
-		if (category is null)
-		{
-			throw new ArgumentNullException(nameof(category));
-		}
-		
-		await categoriesRepository.Delete(category, cancellationToken);
-	}
-	
-	private IEnumerable<CategoryListDto> GetCategoriesTree(IEnumerable<Category> categories)
-	{
-		var dictionary = categories.ToDictionary(
-			category => category.Id,
-			category => new CategoryListDto
-			{
-				Id = category.Id,
-				Name = category.Name,
-				Categories = []
-			});
+    public async Task Update(Guid id, CategoryUpdateDto request, CancellationToken cancellationToken)
+    {
+        await updateValidator.ValidateAndThrowAsync(request, cancellationToken);
+        var category = await categoriesRepository.Get(id, cancellationToken);
 
-		var rootCategories = new List<CategoryListDto>();
+        if (category is null)
+        {
+            throw new ArgumentNullException(nameof(category));
+        }
+        
+        category.Name = request.Name;
+        await categoriesRepository.Update(category, cancellationToken);
+    }
 
-		foreach (var category in categories)
-		{
-			if (category.Path.Contains('.'))
-			{
-				var parentPath = string.Join(".", category.Path.Split('.').SkipLast(1));
-				var parentCategory = categories.FirstOrDefault(c => c.Path == parentPath);
-
-				if (parentCategory != null && dictionary.TryGetValue(parentCategory.Id, out var parent))
-				{
-					parent.Categories.Add(dictionary[category.Id]);
-				}
-			}
-			else
-			{
-				rootCategories.Add(dictionary[category.Id]);
-			}
-		}
-
-		return rootCategories;
-	}
+    public async Task Delete(Guid id, CancellationToken cancellationToken)
+    {
+        // Стара перевірка: чи є товари?
+        if (await productsRepository.IsProductInCategory(id, cancellationToken))
+        {
+            throw new InvalidOperationException($"Cannot delete category with id {id} because it contains products.");
+        }
+        
+        // --- НОВА ПЕРЕВІРКА: чи є підкатегорії? ---
+        if (await categoriesRepository.HasSubCategories(id, cancellationToken))
+        {
+            throw new InvalidOperationException($"Cannot delete category with id {id} because it contains subcategories.");
+        }
+        // ------------------------------------------
+        
+        var category = await categoriesRepository.Get(id, cancellationToken);
+        
+        if (category is null)
+        {
+            throw new ArgumentNullException(nameof(category));
+        }
+        
+        await categoriesRepository.Delete(category, cancellationToken);
+    }
+    
+    // --- НОВИЙ ЧИСТИЙ МЕТОД ---
+    // Рекурсивно перетворює сутність Category на CategoryListDto
+    private CategoryListDto MapToDto(Category category)
+    {
+        return new CategoryListDto
+        {
+            Id = category.Id,
+            Name = category.Name,
+            // Якщо є підкатегорії - викликаємо цей самий метод для них. Якщо ні - повертаємо порожній список.
+            Categories = category.SubCategories?.Select(MapToDto).ToList() ?? []
+        };
+    }
 }

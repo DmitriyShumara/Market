@@ -9,4 +9,5 @@ public interface ICategoriesRepository
 	Task Add(Category category, CancellationToken cancellationToken);
 	Task Update(Category category, CancellationToken cancellationToken);
 	Task Delete(Category category, CancellationToken cancellationToken);
+	Task<bool> HasSubCategories(Guid id, CancellationToken cancellationToken);
 }

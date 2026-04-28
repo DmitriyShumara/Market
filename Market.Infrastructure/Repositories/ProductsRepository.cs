@@ -10,20 +10,27 @@ public class ProductsRepository(MarketDbContext context) : IProductsRepository
 		await context.Products
 			.AsNoTracking()
 			.Include(x => x.Category)
+			.Include(x => x.Brand)
 			.Where(x => (!categoryId.HasValue || x.CategoryId == categoryId) && !x.IsDeleted)
 			.ToListAsync(cancellationToken);
 	
 	public async Task<Product?> Get(long id, CancellationToken cancellationToken) =>
-		await context.Products
-			.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+    await context.Products
+        .Include(x => x.Category)
+		.Include(x => x.Brand)
+        .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, cancellationToken);
 
 	public async Task<IEnumerable<Product>> Get(IEnumerable<long> ids, CancellationToken cancellationToken) =>
 		await context.Products
 			.Where(x => ids.Contains(x.Id))
 			.ToListAsync(cancellationToken);
 
-	public async Task<bool> IsProductInCategory(Guid categoryId, CancellationToken cancellationToken) =>
-		await context.Products.AnyAsync(x => x.CategoryId == categoryId, cancellationToken);
+	public async Task<bool> IsProductInCategory(Guid categoryId, CancellationToken cancellationToken)
+    {
+        return await context.Products
+            .IgnoreQueryFilters() // 👁️ ЗНІМАЄМО ПОВ'ЯЗКУ: бачимо абсолютно всі товари, навіть IsDeleted = true
+            .AnyAsync(x => x.CategoryId == categoryId, cancellationToken);
+    }
 
 	public async Task Add(Product product, CancellationToken cancellationToken)
 	{
@@ -41,5 +48,28 @@ public class ProductsRepository(MarketDbContext context) : IProductsRepository
 	{
 		context.Products.UpdateRange(products);
 		await context.SaveChangesAsync(cancellationToken);
+	}
+
+	public async Task<(IEnumerable<Product> Items, int TotalCount)> GetPaged(
+    Guid? categoryId, 
+    int pageNumber, 
+    int pageSize, 
+    CancellationToken cancellationToken)
+	{
+    var query = context.Products
+        .AsNoTracking()
+        .Include(x => x.Category) // 👈 ОБОВ'ЯЗКОВО
+        .Include(x => x.Brand)    // 👈 ОБОВ'ЯЗКОВО
+        .Where(x => !categoryId.HasValue || x.CategoryId == categoryId);
+
+    var totalCount = await query.CountAsync(cancellationToken);
+
+    var items = await query
+        .OrderBy(x => x.Id)
+        .Skip((pageNumber - 1) * pageSize)
+        .Take(pageSize)
+        .ToListAsync(cancellationToken);
+
+    return (items, totalCount);
 	}
 }

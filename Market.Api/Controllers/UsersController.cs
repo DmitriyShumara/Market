@@ -38,7 +38,7 @@ public class UsersController(IUserService service) : ApiController
 	
 	[HttpPut("{id:long}")]
 	[ProducesResponseType(StatusCodes.Status204NoContent)]
-	public async Task<IActionResult> Update([FromRoute] long id, [FromBody] UserCreateDto request, CancellationToken cancellationToken)
+	public async Task<IActionResult> Update([FromRoute] long id, [FromBody] UserUpdateDto request, CancellationToken cancellationToken)
 	{
 		await service.Update(id, request, cancellationToken);
 

@@ -3,10 +3,11 @@ using Market.Application.Models.Responses;
 using Market.Application.Repositories;
 using Market.Application.Services.Abstractions;
 using Market.Domain.Entities;
+using FluentValidation;
 
 namespace Market.Application.Services;
 
-public class UserService(IUsersRepository repository) : IUserService
+public class UserService(IUsersRepository repository, IValidator<UserCreateDto> createValidator, IValidator<UserUpdateDto> updateValidator) : IUserService
 {
 	public async Task<IEnumerable<UserListDto>> GetAll(CancellationToken cancellationToken)
 	{
@@ -43,6 +44,7 @@ public class UserService(IUsersRepository repository) : IUserService
 
 	public async Task Create(UserCreateDto request, CancellationToken cancellationToken)
 	{
+		await createValidator.ValidateAndThrowAsync(request, cancellationToken);
 		var user = new User
 		{
 			FirstName = request.FirstName,
@@ -54,8 +56,9 @@ public class UserService(IUsersRepository repository) : IUserService
 		await repository.Add(user, cancellationToken);
 	}
 	
-	public async Task Update(long id, UserCreateDto request, CancellationToken cancellationToken)
+	public async Task Update(long id, UserUpdateDto request, CancellationToken cancellationToken)
 	{
+		await updateValidator.ValidateAndThrowAsync(request, cancellationToken);
 		var user = await repository.Get(id, cancellationToken);
 		
 		if (user is null)

@@ -1,3 +1,5 @@
+using Market.Domain.Enums;
+
 namespace Market.Application.Models.Responses;
 
 public class OrderDto
@@ -5,7 +7,8 @@ public class OrderDto
 	public long Id { get; set; }
 	public decimal Price { get; set; }
 	public DateTime CreatedAt { get; set; }
-	public IEnumerable<OrderItemDto> Items { get; set; }
+	public OrderStatus Status { get; set; }
+	public IEnumerable<OrderItemDto> Items { get; set; } = [];
 }
 
 public class OrderItemDto

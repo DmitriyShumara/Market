@@ -16,7 +16,8 @@ public class OrderEntityTypeConfiguration : IEntityTypeConfiguration<Order>
 			.HasMany(x => x.Items)
 			.WithOne(x => x.Order)
 			.HasPrincipalKey(x => x.Id)
-			.HasForeignKey(x => x.OrderId);
+			.HasForeignKey(x => x.OrderId)
+			.OnDelete(DeleteBehavior.Restrict); // 🛡️ ВАЖЛИВО: Забороняємо каскадне видалення позицій із чека!;
 		
 		builder
 			.HasOne(x => x.User)

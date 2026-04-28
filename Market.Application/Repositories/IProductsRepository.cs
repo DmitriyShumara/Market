@@ -11,4 +11,5 @@ public interface IProductsRepository
 	Task Add(Product product, CancellationToken cancellationToken);
 	Task Update(Product product, CancellationToken cancellationToken);
 	Task UpdateRange(IEnumerable<Product> products, CancellationToken cancellationToken);
+	Task<(IEnumerable<Product> Items, int TotalCount)> GetPaged(Guid? categoryId, int pageNumber, int pageSize, CancellationToken cancellationToken);
 }

@@ -16,6 +16,19 @@ public class CategoriesController(ICategoriesService service) : ApiController
 
 		return Ok(categories);
 	}
+
+	[HttpGet("{id:guid}")]
+    public async Task<ActionResult<CategoryListDto>> GetById(Guid id, CancellationToken cancellationToken)
+    {
+        var category = await service.GetById(id, cancellationToken);
+
+        if (category is null)
+        {
+            return NotFound(new { Message = $"Category with ID {id} not found." }); // Повертаємо красиву помилку 404
+        }
+
+        return Ok(category); // Повертаємо статус 200 і саму категорію у форматі JSON
+    }
 	
 	[HttpPost]
 	[ProducesResponseType(StatusCodes.Status201Created)]

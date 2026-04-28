@@ -7,6 +7,9 @@ public class ProductListDto
 	public required ProductListCategoryDto Category { get; set; }
 	public int Amount { get; set; }
 	public decimal Price { get; set; }
+
+	public Guid? BrandId { get; set; }
+    public string? BrandName { get; set; } // Щоб фронтенд міг красиво написати "Виробник: Razer"
 }
 
 public class ProductListCategoryDto

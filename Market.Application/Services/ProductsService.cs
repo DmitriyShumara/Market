@@ -3,10 +3,11 @@ using Market.Application.Models.Responses;
 using Market.Application.Repositories;
 using Market.Application.Services.Abstractions;
 using Market.Domain.Entities;
+using FluentValidation;
 
 namespace Market.Application.Services;
 
-public class ProductsService(IProductsRepository repository) : IProductsService
+public class ProductsService(IProductsRepository repository, IValidator<ProductCreateDto> createValidator, IValidator<ProductUpdateDto> updateValidator, IValidator<PagedRequestDto> pagedValidator) : IProductsService
 {
 	public async Task<IEnumerable<ProductListDto>> GetAll(Guid? categoryId, CancellationToken cancellationToken)
 	{
@@ -19,10 +20,12 @@ public class ProductsService(IProductsRepository repository) : IProductsService
 			Category = new ProductListCategoryDto
 			{
 				Id = x.CategoryId,
-				Name = x.Category.Name
+				Name = x.Category!.Name
 			},
 			Amount = x.Amount,
-			Price = x.Price
+			Price = x.Price,
+			BrandId = x.BrandId,
+    		BrandName = x.Brand?.Name // Знак питання врятує, якщо бренд не вказано
 		});
 	}
 	
@@ -42,29 +45,34 @@ public class ProductsService(IProductsRepository repository) : IProductsService
 			Category = new ProductListCategoryDto
 			{
 				Id = product.CategoryId,
-				Name = product.Category.Name
+				Name = product.Category!.Name
 			},
 			Amount = product.Amount,
-			Price = product.Price
+			Price = product.Price,
+			BrandId = product.BrandId,
+    		BrandName = product.Brand?.Name // Знак питання врятує, якщо бренд не вказано
 		};
 	}
 
 	public async Task Create(ProductCreateDto request, CancellationToken cancellationToken)
 	{
+		await createValidator.ValidateAndThrowAsync(request, cancellationToken);
 		var product = new Product
 		{
 			Name = request.Name,
 			CategoryId = request.CategoryId,
-			Amount = request.Amount,
-			Price = request.Price,
-			IsDeleted = false
+			Amount = request.Amount!.Value,
+			Price = request.Price!.Value,
+			IsDeleted = false,
+			BrandId = request.BrandId
 		};
 		
 		await repository.Add(product, cancellationToken);
 	}
 	
-	public async Task Update(long id, ProductCreateDto request, CancellationToken cancellationToken)
+	public async Task Update(long id, ProductUpdateDto request, CancellationToken cancellationToken)
 	{
+		await updateValidator.ValidateAndThrowAsync(request, cancellationToken);
 		var product = await repository.Get(id, cancellationToken);
 		
 		if (product is null)
@@ -74,8 +82,8 @@ public class ProductsService(IProductsRepository repository) : IProductsService
 		
 		product.Name = request.Name;
 		product.CategoryId = request.CategoryId;
-		product.Amount = request.Amount;
-		product.Price = request.Price;
+		product.Amount = request.Amount!.Value;
+		product.Price = request.Price!.Value;
 		
 		await repository.Update(product, cancellationToken);
 	}
@@ -92,5 +100,42 @@ public class ProductsService(IProductsRepository repository) : IProductsService
 		product.IsDeleted = true;
 		
 		await repository.Update(product, cancellationToken);
+	}
+
+	public async Task<PagedResultDto<ProductListDto>> GetPaged(
+    Guid? categoryId, 
+    PagedRequestDto pagedRequest, 
+    CancellationToken cancellationToken)
+	{
+		await pagedValidator.ValidateAndThrowAsync(pagedRequest, cancellationToken);
+    	// Отримуємо кортеж із репозиторію
+    	var (products, totalCount) = await repository.GetPaged(
+        	categoryId, 
+        	pagedRequest.PageNumber, 
+        	pagedRequest.PageSize, 
+        	cancellationToken);
+
+    	// Мапимо сутності в DTO
+    	var dtos = products.Select(x => new ProductListDto
+    	{
+        	Id = x.Id,
+        	Name = x.Name,
+        	Price = x.Price,
+        	Amount = x.Amount,
+        	BrandName = x.Brand?.Name,
+        	Category = new ProductListCategoryDto 
+        	{ 
+            	Id = x.CategoryId, 
+            	Name = x.Category?.Name ?? "Без категорії"
+        	}
+    	});
+
+    	return new PagedResultDto<ProductListDto>
+    	{
+        	Items = dtos,
+        	TotalCount = totalCount,
+        	PageNumber = pagedRequest.PageNumber,
+        	PageSize = pagedRequest.PageSize
+    	};
 	}
 }

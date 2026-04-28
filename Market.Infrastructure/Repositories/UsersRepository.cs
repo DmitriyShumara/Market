@@ -28,8 +28,11 @@ public class UsersRepository(MarketDbContext context) : IUsersRepository
 	}
 	
 	public async Task Delete(User user, CancellationToken cancellationToken)
-	{
-		context.Users.Remove(user);
-		await context.SaveChangesAsync(cancellationToken);
-	}
+    {
+        // --- М'ЯКЕ ВИДАЛЕННЯ (Soft Delete) ---
+        user.IsDeleted = true;
+        
+        context.Users.Update(user); // Оновлюємо стан юзера замість Remove
+        await context.SaveChangesAsync(cancellationToken);
+    }
 }
